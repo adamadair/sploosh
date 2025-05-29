@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "sploosh-shell", "sploosh-shell\sploosh-shell.csproj", "{6F66E630-F41A-4E85-BF9B-EDF00C90493C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "sploosh-shell-tests", "sploosh-shell-tests\sploosh-shell-tests.csproj", "{4172E574-39AE-46F4-9688-6AFAA16212D5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6F66E630-F41A-4E85-BF9B-EDF00C90493C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F66E630-F41A-4E85-BF9B-EDF00C90493C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F66E630-F41A-4E85-BF9B-EDF00C90493C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F66E630-F41A-4E85-BF9B-EDF00C90493C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4172E574-39AE-46F4-9688-6AFAA16212D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4172E574-39AE-46F4-9688-6AFAA16212D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4172E574-39AE-46F4-9688-6AFAA16212D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4172E574-39AE-46F4-9688-6AFAA16212D5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
