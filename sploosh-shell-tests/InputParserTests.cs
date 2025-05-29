@@ -18,6 +18,10 @@ public class InputParserTests
     private static InputParserTest[] DoubleQuotedTests = new InputParserTest[]
     {
         new InputParserTest { Input = "\"/tmp/quz/'f \\28\\'\"", Expected = new []{"/tmp/quz/'f \\28\\'" }},
+        new InputParserTest { Input = "\"arg1 arg2\" arg3", Expected = new []{"arg1 arg2", "arg3"}},
+        new InputParserTest { Input = "\"arg1 arg2\" \"arg3 arg4\"", Expected = new []{"arg1 arg2", "arg3 arg4"}},
+        new InputParserTest { Input = "\"arg1 arg2\" \"arg3 arg4\" arg5", Expected = new []{"arg1 arg2", "arg3 arg4", "arg5"}},
+        new InputParserTest { Input = "echo \"shell'world'\\\\'test\"", Expected = new []{"echo","shell'world'\\'test"}}
     };
     
 
