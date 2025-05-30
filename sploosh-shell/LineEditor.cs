@@ -105,14 +105,14 @@ internal class LineEditor
     ///    When there are multiple results, the result should be the full
     ///    text
     /// </remarks>
-    public AutoCompleteHandler AutoCompleteEvent;
+    private AutoCompleteHandler _autoCompleteEvent;
 
     private List<string> _commands;
 
     public void SetAutoCompleteCommandList(List<string> commands)
     {
         _commands = commands;
-        AutoCompleteEvent = AutoCompleteMe;
+        _autoCompleteEvent = AutoCompleteMe;
     }
 
     private Completion AutoCompleteMe(string text, int pos)
@@ -125,14 +125,10 @@ internal class LineEditor
 
     private static Handler[] _handlers;
 
-    public LineEditor(string name) : this(name, 10)
+    public LineEditor()
     {
-    }
-
-    public LineEditor(string name, int histsize)
-    {
-        _handlers = new[]
-        {
+        _handlers =
+        [
             new Handler(ConsoleKey.Home, CmdHome),
             new Handler(ConsoleKey.End, CmdEnd),
             new Handler(ConsoleKey.LeftArrow, CmdLeft),
@@ -164,12 +160,11 @@ internal class LineEditor
             Handler.Alt((char)8, ConsoleKey.Backspace, CmdDeleteBackword),
 
             Handler.Control('Q', delegate { HandleChar(C.ReadKey(true).KeyChar); })
-        };
+        ];
 
         _renderedText = new StringBuilder();
         _text = new StringBuilder();
-
-        _history = new History(name, histsize);
+        _history = new History();
     }
 
     private int WindowWidth
@@ -205,9 +200,9 @@ internal class LineEditor
         UpdateHomeRow(max);
     }
 
-    private void UpdateHomeRow(int screenpos)
+    private void UpdateHomeRow(int screenPosition)
     {
-        var lines = 1 + (screenpos / WindowWidth);
+        var lines = 1 + (screenPosition / WindowWidth);
 
         _homeRow = C.CursorTop - (lines - 1);
         if (_homeRow < 0)
@@ -217,10 +212,10 @@ internal class LineEditor
 
     private void RenderFrom(int pos)
     {
-        var rpos = TextToRenderPos(pos);
+        var renderPosition = TextToRenderPos(pos);
         int i;
 
-        for (i = rpos; i < _renderedText.Length; i++)
+        for (i = renderPosition; i < _renderedText.Length; i++)
             C.Write(_renderedText[i]);
 
         if ((_shownPrompt.Length + _renderedText.Length) > _maxRendered)
@@ -286,9 +281,9 @@ internal class LineEditor
 
     private int LineCount => (_shownPrompt.Length + _renderedText.Length) / WindowWidth;
 
-    private void ForceCursor(int newpos)
+    private void ForceCursor(int newPosition)
     {
-        _cursor = newpos;
+        _cursor = newPosition;
 
         var actualPos = _shownPrompt.Length + TextToRenderPos(_cursor);
         var row = _homeRow + (actualPos / WindowWidth);
@@ -299,12 +294,12 @@ internal class LineEditor
         C.SetCursorPosition(col, row);
     }
 
-    private void UpdateCursor(int newpos)
+    private void UpdateCursor(int newPosition)
     {
-        if (_cursor == newpos)
+        if (_cursor == newPosition)
             return;
 
-        ForceCursor(newpos);
+        ForceCursor(newPosition);
     }
 
     private void InsertChar(char c)
@@ -338,7 +333,7 @@ internal class LineEditor
     {
         var complete = false;
 
-        if (AutoCompleteEvent != null)
+        if (_autoCompleteEvent != null)
         {
             if (TabAtStartCompletes)
                 complete = true;
@@ -354,13 +349,13 @@ internal class LineEditor
 
             if (complete)
             {
-                var completion = AutoCompleteEvent(_text.ToString(), _cursor);
+                var completion = _autoCompleteEvent(_text.ToString(), _cursor);
                 var completions = completion.Result;
                 if (completions == null)
                     return;
 
-                var ncompletions = completions.Length;
-                if (ncompletions == 0)
+                var completionNum = completions.Length;
+                if (completionNum == 0)
                     return;
 
                 if (completions.Length == 1)
@@ -376,7 +371,7 @@ internal class LineEditor
                         var c = completions[0][p];
 
 
-                        for (var i = 1; i < ncompletions; i++)
+                        for (var i = 1; i < completionNum; i++)
                         {
                             if ((completions[i].Length - 1) < p)
                                 goto mismatch;
@@ -844,15 +839,15 @@ internal class LineEditor
         ForceCursor(_cursor);
     }
 
-    private void SetText(string newtext)
+    private void SetText(string newText)
     {
         C.SetCursorPosition(0, _homeRow);
-        InitText(newtext);
+        InitText(newText);
     }
 
-    private void SetPrompt(string newprompt)
+    private void SetPrompt(string newPrompt)
     {
-        _shownPrompt = newprompt;
+        _shownPrompt = newPrompt;
         C.SetCursorPosition(0, _homeRow);
         Render();
         ForceCursor(_cursor);
@@ -923,38 +918,33 @@ internal class LineEditor
         private int _tail;
         private int _cursor;
         private int _count;
-        private readonly string _histfile;
+        private readonly string _historyFile;
 
-        public History(string app, int size)
+        public History()
         {
+            var size = Settings.MaxHistorySize;
             if (size < 1)
-                throw new ArgumentException("size");
-
-            if (app != null)
+                size = 1000;
+            
+            var dir = Settings.SplooshDirectory;
+            if (!Directory.Exists(dir))
             {
-                var dir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                //SimpleConsole.WL (dir);
-                if (!Directory.Exists(dir))
+                try
                 {
-                    try
-                    {
-                        Directory.CreateDirectory(dir);
-                    }
-                    catch
-                    {
-                        app = null;
-                    }
+                    Directory.CreateDirectory(dir);
                 }
-
-                if (app != null)
-                    _histfile = Path.Combine(dir, app) + "._history";
+                catch
+                {
+                    Console.WriteLine("Error creating directory");
+                }
             }
 
+            _historyFile = Settings.HistoryFilePath;
             _history = new string[size];
             _head = _tail = _cursor = 0;
 
-            if (!File.Exists(_histfile)) return;
-            using var sr = File.OpenText(_histfile);
+            if (!File.Exists(_historyFile)) return;
+            using var sr = File.OpenText(_historyFile);
 
             while (sr.ReadLine() is { } line)
             {
@@ -965,12 +955,12 @@ internal class LineEditor
 
         public void Close()
         {
-            if (_histfile == null)
+            if (_historyFile == null)
                 return;
 
             try
             {
-                using var sw = File.CreateText(_histfile);
+                using var sw = File.CreateText(_historyFile);
                 var start = (_count == _history.Length) ? _head : _tail;
                 for (var i = start; i < start + _count; i++)
                 {
