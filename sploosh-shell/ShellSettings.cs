@@ -8,7 +8,7 @@ namespace AwaShell;
 /// </summary>
 public class ShellSettings
 {
-    public static string SplooshDirectory { get; } = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + Path.DirectorySeparatorChar + "sploosh";
+    public static string SplooshDirectory { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "sploosh");
     public static string SettingsFile { get; } = "sploosh-settings.json";
     public string Prompt { get; set; } = "$ ";
     public string HistoryFilePath { get; set; } = ".sploosh_history";
