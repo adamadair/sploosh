@@ -66,6 +66,7 @@ public class ShellSettings
             catch (Exception ex)
             {
                 Console.WriteLine($"Error loading settings: {ex.Message}");
+                _instance = new ShellSettings();
             }
         }
     }
