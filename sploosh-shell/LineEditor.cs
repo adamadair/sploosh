@@ -36,9 +36,6 @@ internal class LineEditor
     // If we are done editing, this breaks the interactive loop
     private bool _done;
 
-    // The thread where the Editing started taking place
-    private Thread _editThread;
-
     // Our object that tracks history
     private readonly History _history;
 
@@ -56,40 +53,40 @@ internal class LineEditor
     private int _matchAt;
 
     // Used to implement the Kill semantics (multiple Alt-Ds accumulate)
-    private KeyHandler _lastHandler;
+    private KeyEventHandler _lastEventHandler;
 
-    private delegate void KeyHandler();
+    private delegate void KeyEventHandler();
 
     private struct Handler
     {
         public readonly ConsoleKeyInfo KeyInfo;
-        public readonly KeyHandler KeyHandler;
+        public readonly KeyEventHandler KeyHandler;
 
-        public Handler(ConsoleKey key, KeyHandler h)
+        public Handler(ConsoleKey key, KeyEventHandler h)
         {
             KeyInfo = new ConsoleKeyInfo((char)0, key, false, false, false);
             KeyHandler = h;
         }
 
-        private Handler(char c, KeyHandler h)
+        private Handler(char c, KeyEventHandler h)
         {
             KeyHandler = h;
             // Use the "Zoom" as a flag that we only have a character.
             KeyInfo = new ConsoleKeyInfo(c, ConsoleKey.Zoom, false, false, false);
         }
 
-        private Handler(ConsoleKeyInfo keyInfo, KeyHandler h)
+        private Handler(ConsoleKeyInfo keyInfo, KeyEventHandler h)
         {
             KeyInfo = keyInfo;
             KeyHandler = h;
         }
 
-        public static Handler Control(char c, KeyHandler h)
+        public static Handler Control(char c, KeyEventHandler h)
         {
             return new Handler((char)(c - 'A' + 1), h);
         }
 
-        public static Handler Alt(char c, ConsoleKey k, KeyHandler h)
+        public static Handler Alt(char c, ConsoleKey k, KeyEventHandler h)
         {
             var cki = new ConsoleKeyInfo(c, k, false, true, false);
             return new Handler(cki, h);
@@ -179,11 +176,14 @@ internal class LineEditor
     {
         get
         {
-            // Since Mono doesn't support the Console.WindowWidth attribute
-            // default to 80, it seems to work ok for most purposes.
-            if (Console.WindowWidth == 0)
+            try
+            {
+                return Console.WindowWidth > 0 ? Console.WindowWidth : 80;
+            }
+            catch
+            {
                 return 80;
-            return Console.WindowWidth;
+            }
         }
     }
 
@@ -481,7 +481,7 @@ internal class LineEditor
         if (_text.Length == 0)
         {
             _done = true;
-            _text = null;
+            _text = new StringBuilder();
             SimpleConsole.Wl();
             return;
         }
@@ -576,7 +576,7 @@ internal class LineEditor
 
         var k = _text.ToString(_cursor, pos - _cursor);
 
-        if (_lastHandler == CmdDeleteWord)
+        if (_lastEventHandler == CmdDeleteWord)
             _killBuffer = _killBuffer + k;
         else
             _killBuffer = k;
@@ -594,7 +594,7 @@ internal class LineEditor
 
         string k = _text.ToString(pos, _cursor - pos);
 
-        if (_lastHandler == CmdDeleteBackword)
+        if (_lastEventHandler == CmdDeleteBackword)
             _killBuffer = k + _killBuffer;
         else
             _killBuffer = k;
@@ -729,9 +729,6 @@ internal class LineEditor
                 if (string.IsNullOrEmpty(_lastSearch)) return;
                 _search = _lastSearch;
                 SetSearchPrompt(_search);
-
-                ReverseSearch();
-                return;
             }
 
             ReverseSearch();
@@ -764,15 +761,14 @@ internal class LineEditor
         ForceCursor(_cursor);
     }
 
+    
+    private CancellationTokenSource _cancellationTokenSource;
+
     void InterruptEdit(object sender, ConsoleCancelEventArgs a)
     {
-        // Do not abort our program:
         a.Cancel = true;
-
-        // Interrupt the editor
-        _editThread.Abort();
+        _cancellationTokenSource?.Cancel();
     }
-
     void HandleChar(char c)
     {
         if (_searching != 0)
@@ -807,7 +803,7 @@ internal class LineEditor
                 {
                     handled = true;
                     handler.KeyHandler();
-                    _lastHandler = handler.KeyHandler;
+                    _lastEventHandler = handler.KeyHandler;
                     break;
                 }
 
@@ -815,7 +811,7 @@ internal class LineEditor
                 {
                     handled = true;
                     handler.KeyHandler();
-                    _lastHandler = handler.KeyHandler;
+                    _lastEventHandler = handler.KeyHandler;
                     break;
                 }
             }
@@ -824,7 +820,7 @@ internal class LineEditor
             {
                 if (_searching != 0)
                 {
-                    if (_lastHandler != CmdReverseSearch)
+                    if (_lastEventHandler != CmdReverseSearch)
                     {
                         _searching = 0;
                         SetPrompt(Prompt);
@@ -864,7 +860,6 @@ internal class LineEditor
 
     public string Edit(string prompt, string initial)
     {
-        _editThread = Thread.CurrentThread;
         _searching = 0;
         C.CancelKeyPress += InterruptEdit;
 
@@ -876,20 +871,18 @@ internal class LineEditor
         _shownPrompt = prompt;
         InitText(initial);
         _history.Append(initial);
-
+        _cancellationTokenSource = new CancellationTokenSource();
         do
         {
-            try
-            {
-                EditLoop();
-            }
-            catch (ThreadAbortException)
+            EditLoop();
+            if (_cancellationTokenSource.IsCancellationRequested)
             {
                 _searching = 0;
-                Thread.ResetAbort();
+
                 SimpleConsole.Wl();
                 SetPrompt(prompt);
                 SetText("");
+                _cancellationTokenSource = new CancellationTokenSource();
             }
         } while (!_done);
 
@@ -961,15 +954,12 @@ internal class LineEditor
             _head = _tail = _cursor = 0;
 
             if (!File.Exists(_histfile)) return;
-            using (var sr = File.OpenText(_histfile))
-            {
-                string line;
+            using var sr = File.OpenText(_histfile);
 
-                while ((line = sr.ReadLine()) != null)
-                {
-                    if (line != "")
-                        Append(line);
-                }
+            while (sr.ReadLine() is { } line)
+            {
+                if (line != "")
+                    Append(line);
             }
         }
 
@@ -980,14 +970,12 @@ internal class LineEditor
 
             try
             {
-                using (var sw = File.CreateText(_histfile))
+                using var sw = File.CreateText(_histfile);
+                var start = (_count == _history.Length) ? _head : _tail;
+                for (var i = start; i < start + _count; i++)
                 {
-                    var start = (_count == _history.Length) ? _head : _tail;
-                    for (var i = start; i < start + _count; i++)
-                    {
-                        var p = i % _history.Length;
-                        sw.WriteLine(_history[p]);
-                    }
+                    var p = i % _history.Length;
+                    sw.WriteLine(_history[p]);
                 }
             }
             catch
@@ -1109,28 +1097,19 @@ internal class LineEditor
     }
 }
 
-internal class Completion
+internal class Completion(string prefix, string[] result)
 {
-    public string[] Result;
-    public string Prefix;
-
-    public Completion(string prefix, string[] result)
-    {
-        Prefix = prefix;
-        Result = result;
-    }
+    public readonly string[] Result = result;
+    public readonly string Prefix = prefix;
 }
 
 internal delegate Completion AutoCompleteHandler(string text, int pos);
 
 internal static class SimpleConsole
 {
-    public static string GetString(bool cursorVisible)
+    private static string GetString()
     {
-        var cv = C.CursorVisible;
-        C.CursorVisible = cursorVisible;
         var returnValue = C.ReadLine();
-        C.CursorVisible = cv;
         return returnValue;
     }
 
@@ -1155,16 +1134,12 @@ internal static class SimpleConsole
         return C.ReadKey(true).KeyChar;
     }
 
-    public static string PromptUser(string prompt, bool cursorVisible)
-    {
-        C.Write(prompt);
-        return GetString(cursorVisible);
-    }
-
     public static string PromptUser(string prompt)
     {
-        return PromptUser(prompt, true);
+        C.Write(prompt);
+        return GetString();
     }
+    
 
     /*
      * My Write and Write Line functions

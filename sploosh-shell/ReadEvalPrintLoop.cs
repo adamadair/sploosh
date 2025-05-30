@@ -1,3 +1,5 @@
+using System;
+
 namespace AwaShell;
 
 public static class ReadEvalPrintLoop
