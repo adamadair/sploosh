@@ -7,9 +7,9 @@ using System.Linq;
 namespace AwaShell;
 
 // This class is responsible for managing and executing commands in the shell.
-public class CommandManager
+public static class CommandManager
 {
-    
+    // Dictionary of built-in commands and their handlers
     private static readonly Dictionary<string, Func<string[], bool>> _builtins = new()
     {
         ["echo"] = Echo,
@@ -29,6 +29,14 @@ public class CommandManager
         ["bg"] = (args) => { ShellIo.Out.WriteLine("Background command not implemented yet."); return true; },
     };
     
+    // Readonly property to get the list of built-in commands
+    public static IEnumerable<string> BuiltinCommands => _builtins.Keys;
+    
+    /// <summary>
+    /// executes a command based on the provided arguments.
+    /// </summary>
+    /// <param name="args"></param>
+    /// <returns></returns>
     public static bool Execute(string[] args)
     {
         if (args.Length == 0)
@@ -72,6 +80,7 @@ public class CommandManager
         return true;
     }
 
+    // This method handles the "echo" command, which prints its arguments to the output.
     private static bool Echo(string[] args)
     {
         // Skip the command name "echo" and join the remaining arguments
@@ -80,6 +89,7 @@ public class CommandManager
         return true;
     }
 
+    // This method handles the "exit" command, which terminates the shell with an optional exit code.
     private static bool Exit(string[] args)
     {
         var exitCode = 0;
@@ -96,6 +106,7 @@ public class CommandManager
         return false;
     }
 
+    // This method handles the "type" command, which checks if a command is a shell builtin or an executable.
     private static bool Type(string[] args)
     {
         if (args.Length < 2)
@@ -125,6 +136,7 @@ public class CommandManager
         return true;
     }
 
+    // This method handles the "pwd" command, which prints the current working directory.
     private static bool Pwd(string[] args)
     {
         string currentDirectory = Directory.GetCurrentDirectory();
@@ -132,11 +144,12 @@ public class CommandManager
         return true;
     }
 
+    // This method handles the "cd" command, which changes the current working directory.
     private static bool Cd(string[] args)
     {
         if (args.Length < 2)
         {
-            // go to home directory
+            // go to the home directory
             string homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             Directory.SetCurrentDirectory(homeDir);
             return true;

@@ -1,18 +1,26 @@
 using System;
+using System.Linq;
 
 namespace AwaShell;
 
+/// <summary>
+/// Read-Eval-Print Loop (REPL) for the shell.
+/// </summary>
 public static class ReadEvalPrintLoop
 {
     public static string Prompt => Settings.Prompt;
     
+ 
     public static void Loop()
     {
         
+        var editor = new LineEditor();
+        
+        // Set auto-completion list from list of built-in commands
+        editor.SetAutoCompleteCommandList(CommandManager.BuiltinCommands.ToList());
         while (true)
         {
-            //InitCommandDictionary();
-            var editor = new LineEditor();
+
             string input = editor.Edit(Prompt,"");
             if (input == null)
                 break;
