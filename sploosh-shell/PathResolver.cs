@@ -10,7 +10,7 @@ public static class PathResolver
     private static DateTime _lastPathUpdate = DateTime.MinValue;
     private static string _lastPathValue = string.Empty;
 
-    public static string? FindExecutable(string command)
+    public static string FindExecutable(string command)
     {
         // Check if PATH has changed
         var currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
@@ -22,7 +22,7 @@ public static class PathResolver
         }
 
         // Return from cache if available
-        if (_executableCache.TryGetValue(command, out string? cachedPath))
+        if (_executableCache.TryGetValue(command, out string cachedPath))
             return cachedPath;
 
         // Search in PATH directories
