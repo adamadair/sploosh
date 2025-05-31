@@ -38,7 +38,7 @@ public class ShellIo
         Error = w;
     }
     
-    public static string? Prompt(string p = "$")
+    public static string Prompt(string p = "$")
     {
         Out.Write($"{p} ");
         Out.Flush();

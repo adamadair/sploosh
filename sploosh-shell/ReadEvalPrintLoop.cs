@@ -28,14 +28,16 @@ public static class ReadEvalPrintLoop
             try
             {
                 // Parse the input
-                string[] args = InputParser.Parse(input);
+                string[] tokens = InputParser.Parse(input);
 
                 // Check for empty input
-                if (args.Length == 0)
+                if (tokens.Length == 0)
                     continue;
 
+                // Create ParsedCommand object
+                var parsedCommand = CommandParser.ParseTokens(tokens);
                 // Execute the command
-                bool continueLoop = CommandManager.Execute(args);
+                bool continueLoop = CommandManager.Execute(parsedCommand);
                 // At this point it is safe to save the command history. 
                 // Any commands that cause an exception should not be saved to 
                 // history.
