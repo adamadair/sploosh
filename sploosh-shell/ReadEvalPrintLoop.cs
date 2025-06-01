@@ -10,18 +10,13 @@ public static class ReadEvalPrintLoop
 {
     public static string Prompt => Settings.Prompt;
     
- 
     public static void Loop()
     {
-        
-        var editor = new LineEditor();
-        
-        // Set auto-completion list from list of built-in commands
-        editor.SetAutoCompleteCommandList(CommandManager.BuiltinCommands.ToList());
+        // Initialize the ReadLine library
+        ReadLine.ReadLine.HistoryEnabled = true;
         while (true)
         {
-
-            string input = editor.Edit(Prompt,"");
+            string input = ReadLine.ReadLine.Read(Prompt);
             if (input == null)
                 break;
             
@@ -41,7 +36,7 @@ public static class ReadEvalPrintLoop
                 // At this point it is safe to save the command history. 
                 // Any commands that cause an exception should not be saved to 
                 // history.
-                editor.SaveHistory();
+                //editor.SaveHistory();
                 
                 if (!continueLoop)
                     break;
