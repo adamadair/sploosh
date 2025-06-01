@@ -10,6 +10,9 @@ public class AutoCompleteHandler : IAutoCompleteHandler
 
     public string[] GetSuggestions(string text, int index)
     {
-        return string.IsNullOrWhiteSpace(text) ? [] : _builtInCommands.Where(s => s.StartsWith(text)).ToArray();
+        return string.IsNullOrWhiteSpace(text) ? [] : 
+            _builtInCommands.Where(s => s.StartsWith(text))
+                .Select(c => c.Replace(text, ""))
+                .ToArray();
     }
 }

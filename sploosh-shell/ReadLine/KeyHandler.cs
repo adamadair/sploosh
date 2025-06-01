@@ -355,24 +355,19 @@ internal class KeyHandler
                     ReplaceChar(char.ToLowerInvariant(_text[_cursorPos]));
             },
             ["Tab"] = () => {
-                if (IsInAutoCompleteMode()) {
-                    NextAutoComplete();
-                } else {
-                    if (autoCompleteHandler == null || !IsEndOfLine())
-                        return;
-
-                    string text = _text.ToString();
-
-                    _completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
-                    _completionStart = _completionStart == -1 ? 0 : _completionStart + 1;
-
-                    _completions = autoCompleteHandler.GetSuggestions(text, _completionStart);
-                    _completions = _completions?.Length == 0 ? null : _completions;
-
-                    if (_completions == null)
-                        return;
-
-                    StartAutoComplete();
+                if(autoCompleteHandler == null || !IsEndOfLine())
+                    return; 
+                string text = _text.ToString();
+                _completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
+                _completions = autoCompleteHandler.GetSuggestions(text, _completionStart);
+                if (_completions.Length == 1)
+                {
+                    // If there's only one completion, write it directly
+                    WriteString($"{_completions[0]} ");
+                }
+                else
+                {
+                    Console.Write("\x07"); // Bell character to indicate multiple completions
                 }
             },
 
