@@ -26,7 +26,7 @@ A hobbyist POSIX-style shell written in C#, because writing your own shell is a 
 - [x] Implement command parsing and execution
 - [x] Support shell built-ins (`cd`, `exit`, `echo`, etc.)
 - [ ] Handle background execution with `&`
-- [ ] Implement pipelines using `|`
+- [X] Implement pipelines using `|`
 - [X] Implement I/O redirection (`>`, `<`, `>>`, `2>`, `2>>`)
 
 ## Control Structures

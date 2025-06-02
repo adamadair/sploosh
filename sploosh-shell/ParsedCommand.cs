@@ -19,10 +19,5 @@ public sealed record ParsedCommand(
     /// True if any output should be piped rather than sent to the console.
     /// </summary>
     public bool IsPipelineStart => PipeTarget is not null;
-
-    /// <summary>
-    /// Convenience ctor for commands with no args or redirection.
-    /// </summary>
-    public ParsedCommand(string executable)
-        : this(executable, Array.Empty<string>(), RedirectionInfo.None) { }
+    
 }

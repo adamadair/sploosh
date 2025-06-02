@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace AwaShell;
 
@@ -92,108 +93,218 @@ public static class CommandManager
     {
         return redirects.HasAny ? new RedirectionScope(redirects) : null;
     }
-
     /// <summary>
-    /// Executes a pipeline of commands
+    /// Walks a chain of piped ParsedCommand objects and returns them in execution order.
     /// </summary>
-    private static void ExecutePipeline(ParsedCommand pipeline)
+    private static List<ParsedCommand> CollectPipeline(ParsedCommand start)
     {
-        if (!pipeline.IsPipelineStart)
+        var list = new List<ParsedCommand>();
+        var current = start;
+        while (current != null)
         {
-            return;
+            list.Add(current);
+            current = current.PipeTarget; // or PipelineTarget, depending on your field name
+        }
+        return list;
+    }
+    
+    private static bool ExecutePipeline(ParsedCommand command)
+    {
+        if (command == null)
+            return true;
+
+        // If the pipeline has no builtins, we can use a simpler approach
+        if (!command.IsPipelineStart || !CollectPipeline(command).Any(c => _builtins.ContainsKey(c.Executable)))
+        {
+            return ExecutePipelineWithNoBuiltins(command);
         }
 
-        var processes = new List<Process>();
-        ParsedCommand current = pipeline;
+        // Otherwise, we need to handle builtins and external commands
+        return ExecutePipelineWithBuiltins(command);
+    }
+
+    /// <summary>
+    /// Executes a pipeline of commands with no builtins -> Passes #BR6 tests
+    /// </summary>
+    private static bool ExecutePipelineWithNoBuiltins(ParsedCommand command)
+    {
+        var commands = new List<ParsedCommand>();
+        var current = command;
+        while (current != null)
+        {
+            commands.Add(current);
+            current = current.PipeTarget;
+        }
+
+        int count = commands.Count;
+        var processes = new List<Process>(count);
+
+        // Create the pipe connections ahead of time
+        // Removed unused 'streams' variable declaration to simplify the code.
+
+        for (int i = 0; i < count; i++)
+        {
+            var cmd = commands[i];
+            var isFirst = i == 0;
+            var isLast = i == count - 1;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = cmd.Executable,
+                Arguments = string.Join(" ", cmd.Arguments),
+                UseShellExecute = false,
+                RedirectStandardInput = !isFirst,
+                RedirectStandardOutput = !isLast,
+                RedirectStandardError = true
+            };
+
+            var proc = new Process { StartInfo = psi };
+            processes.Add(proc);
+        }
+
+        // Start processes
+        foreach (var proc in processes)
+            proc.Start();
+
+        // Set up piping: from stdout of i to stdin of i+1
+        var copyTasks = new List<Task>();
+        for (int i = 0; i < count - 1; i++)
+        {
+            var source = processes[i].StandardOutput.BaseStream;
+            var target = processes[i + 1].StandardInput.BaseStream;
+
+            // Stream the data and close stdin of the next process when done
+            var copyTask = Task.Run(async () =>
+            {
+                await source.CopyToAsync(target);
+                target.Close();
+            });
+
+            copyTasks.Add(copyTask);
+        }
+
+        // Wait for output to finish copying
+        Task.WaitAll(copyTasks.ToArray());
+
+        // Wait for processes in reverse order (important)
+        for (int i = count - 1; i >= 0; i--)
+            processes[i].WaitForExit();
+
+        return true;
+    }
+
+    
+    /// <summary>
+    /// Executes a pipeline of commands with at lease one builtin -> Passes #NY9 tests
+    /// Without a proper fork we need to handle stream redirection manually.
+    /// </summary>
+    private static bool ExecutePipelineWithBuiltins(ParsedCommand start)
+    {
+        var pipeline = CollectPipeline(start);
+        int stages = pipeline.Count;
+
+        var buffers = new List<StringWriter>();
+        for (int i = 0; i < stages - 1; i++)
+            buffers.Add(new StringWriter());
+
+        TextReader originalIn = ShellIo.In;
+        TextWriter originalOut = ShellIo.Out;
+        TextWriter originalErr = ShellIo.Error;
 
         try
         {
-            Process previousProcess = null;
-
-            // Create all processes in the pipeline
-            while (current != null)
+            for (int i = 0; i < stages; i++)
             {
-                var process = new Process();
-                string executable = current.Executable;
-                string executablePath = PathResolver.FindExecutable(executable);
-                
-                if (executablePath == null)
+                var cmd = pipeline[i];
+                bool isBuiltin = _builtins.ContainsKey(cmd.Executable);
+                bool isFirst = i == 0;
+                bool isLast = i == stages - 1;
+
+                // Input: first = original input, otherwise use previous buffer
+                if (isFirst)
+                    ShellIo.SetIn(originalIn);
+                else
+                    ShellIo.SetIn(new StringReader(buffers[i - 1].ToString()));
+
+                // Output: last = original output, otherwise write to buffer
+                if (isLast)
+                    ShellIo.SetOut(originalOut);
+                else
+                    ShellIo.SetOut(buffers[i]);
+
+                ShellIo.SetError(originalErr); // always use original error for now
+
+                if (isBuiltin)
                 {
-                    ShellIo.Error.WriteLine($"{executable}: command not found");
-                    break;
+                    _builtins[cmd.Executable](cmd);
                 }
-
-                process.StartInfo = new ProcessStartInfo
+                else
                 {
-                    FileName = executable,
-                    UseShellExecute = false,
-                    RedirectStandardInput = previousProcess != null,
-                    RedirectStandardOutput = current.PipeTarget != null || current.Redirects.HasStdOut,
-                    RedirectStandardError = current.Redirects.HasStdErr
-                };
+                    var proc = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = cmd.Executable,
+                            UseShellExecute = false,
+                            RedirectStandardInput = !isFirst,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        }
+                    };
 
-                foreach (var arg in current.Arguments)
-                {
-                    process.StartInfo.ArgumentList.Add(arg);
+                    foreach (var arg in cmd.Arguments)
+                        proc.StartInfo.ArgumentList.Add(arg);
+
+                    proc.Start();
+
+                    // Write previous buffer (if any) to process stdin
+                    if (!isFirst)
+                    {
+                        using var writer = proc.StandardInput;
+                        writer.Write(ShellIo.In.ReadToEnd()); // safely read redirected input
+                    }
+
+                    // Read output and write it forward (or to terminal if last)
+                    if (isLast)
+                    {
+                        using var reader = proc.StandardOutput;
+                        var buffer = new char[4096];
+                        int bytesRead;
+                        while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            ShellIo.Out.Write(buffer, 0, bytesRead);
+                        }
+                    }
+                    else
+                    {
+                        using var reader = proc.StandardOutput;
+                        var buffer = new char[4096];
+                        int bytesRead;
+                        while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            buffers[i].Write(buffer, 0, bytesRead);
+                        }
+                    }
+
+                    // Read and emit errors
+                    string error = proc.StandardError.ReadToEnd();
+                    if (!string.IsNullOrWhiteSpace(error))
+                        ShellIo.Error.Write(error);
+
+                    proc.WaitForExit();
                 }
-
-                // If this is the last command in the pipeline and has redirection
-                if (current.PipeTarget == null && current.Redirects.HasAny)
-                {
-                    using var redirectionScope = SetupRedirection(current.Redirects);
-                }
-
-                processes.Add(process);
-                previousProcess = process;
-                current = current.PipeTarget;
             }
-
-            // Set up the pipeline connections
-            for (int i = 0; i < processes.Count; i++)
-            {
-                processes[i].Start();
-                
-                // Connect stdout of current process to stdin of next process
-                if (i < processes.Count - 1)
-                {
-                    processes[i].StandardOutput.BaseStream.CopyToAsync(processes[i + 1].StandardInput.BaseStream);
-                }
-            }
-
-            // Handle output of last process
-            var lastProcess = processes[processes.Count - 1];
-            if (lastProcess.StartInfo.RedirectStandardOutput)
-            {
-                string output;
-                while ((output = lastProcess.StandardOutput.ReadLine()) != null)
-                {
-                    ShellIo.Out.WriteLine(output);
-                }
-            }
-
-            // Wait for all processes to complete (in reverse order)
-            for (int i = processes.Count - 1; i >= 0; i--)
-            {
-                if (i < processes.Count - 1)
-                {
-                    processes[i + 1].StandardInput.Close();
-                }
-                processes[i].WaitForExit();
-            }
-        }
-        catch (Exception ex)
-        {
-            ShellIo.Error.WriteLine($"Pipeline execution error: {ex.Message}");
         }
         finally
         {
-            foreach (var process in processes)
-            {
-                process.Dispose();
-            }
+            ShellIo.SetIn(originalIn);
+            ShellIo.SetOut(originalOut);
+            ShellIo.SetError(originalErr);
         }
+
+        return true;
     }
-    
+
     /// <summary>
     /// executes a command based on the provided ParsedCommand.
     /// </summary>
@@ -287,9 +398,28 @@ public static class CommandManager
     // This method handles the "echo" command, which prints its arguments to the output.
     private static bool Echo(ParsedCommand cmd)
     {
-        // Skip the command name "echo" and join the remaining arguments
-        string output = string.Join(" ", cmd.Arguments);
-        ShellIo.Out.WriteLine(output);
+        bool suppressNewline = false;
+        var arguments = new List<string>(cmd.Arguments);
+        
+        // Check for -n flag
+        if (arguments.Count > 0 && arguments[0] == "-n")
+        {
+            suppressNewline = true;
+            arguments.RemoveAt(0);
+        }
+        
+        // Join the remaining arguments
+        string output = string.Join(" ", arguments);
+        
+        // Write output with or without newline based on flag
+        if (suppressNewline)
+        {
+            ShellIo.Out.Write(output);
+        }
+        else
+        {
+            ShellIo.Out.WriteLine(output);
+        }
         return true;
     }
 
