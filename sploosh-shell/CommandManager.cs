@@ -93,11 +93,40 @@ public static class CommandManager
     {
         return redirects.HasAny ? new RedirectionScope(redirects) : null;
     }
+    /// <summary>
+    /// Walks a chain of piped ParsedCommand objects and returns them in execution order.
+    /// </summary>
+    private static List<ParsedCommand> CollectPipeline(ParsedCommand start)
+    {
+        var list = new List<ParsedCommand>();
+        var current = start;
+        while (current != null)
+        {
+            list.Add(current);
+            current = current.PipeTarget; // or PipelineTarget, depending on your field name
+        }
+        return list;
+    }
+    
+    private static bool ExecutePipeline(ParsedCommand command)
+    {
+        if (command == null)
+            return true;
+
+        // If the pipeline has no builtins, we can use a simpler approach
+        if (!command.IsPipelineStart || !CollectPipeline(command).Any(c => _builtins.ContainsKey(c.Executable)))
+        {
+            return ExecutePipelineWithNoBuiltins(command);
+        }
+
+        // Otherwise, we need to handle builtins and external commands
+        return ExecutePipelineWithBuiltins(command);
+    }
 
     /// <summary>
-    /// Executes a pipeline of commands
+    /// Executes a pipeline of commands with no builtins -> Passes #BR6 tests
     /// </summary>
-    private static bool ExecutePipeline(ParsedCommand command)
+    private static bool ExecutePipelineWithNoBuiltins(ParsedCommand command)
     {
         var commands = new List<ParsedCommand>();
         var current = command;
@@ -157,7 +186,119 @@ public static class CommandManager
 
         return true;
     }
+
     
+    /// <summary>
+    /// Executes a pipeline of commands with at lease one builtin -> Passes #NY9 tests
+    /// Without a proper fork we need to handle stream redirection manually.
+    /// </summary>
+    private static bool ExecutePipelineWithBuiltins(ParsedCommand start)
+    {
+        var pipeline = CollectPipeline(start);
+        int stages = pipeline.Count;
+
+        var buffers = new List<StringWriter>();
+        for (int i = 0; i < stages - 1; i++)
+            buffers.Add(new StringWriter());
+
+        TextReader originalIn = ShellIo.In;
+        TextWriter originalOut = ShellIo.Out;
+        TextWriter originalErr = ShellIo.Error;
+
+        try
+        {
+            for (int i = 0; i < stages; i++)
+            {
+                var cmd = pipeline[i];
+                bool isBuiltin = _builtins.ContainsKey(cmd.Executable);
+                bool isFirst = i == 0;
+                bool isLast = i == stages - 1;
+
+                // Input: first = original input, otherwise use previous buffer
+                if (isFirst)
+                    ShellIo.SetIn(originalIn);
+                else
+                    ShellIo.SetIn(new StringReader(buffers[i - 1].ToString()));
+
+                // Output: last = original output, otherwise write to buffer
+                if (isLast)
+                    ShellIo.SetOut(originalOut);
+                else
+                    ShellIo.SetOut(buffers[i]);
+
+                ShellIo.SetError(originalErr); // always use original error for now
+
+                if (isBuiltin)
+                {
+                    _builtins[cmd.Executable](cmd);
+                }
+                else
+                {
+                    var proc = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = cmd.Executable,
+                            UseShellExecute = false,
+                            RedirectStandardInput = !isFirst,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        }
+                    };
+
+                    foreach (var arg in cmd.Arguments)
+                        proc.StartInfo.ArgumentList.Add(arg);
+
+                    proc.Start();
+
+                    // Write previous buffer (if any) to process stdin
+                    if (!isFirst)
+                    {
+                        using var writer = proc.StandardInput;
+                        writer.Write(ShellIo.In.ReadToEnd()); // safely read redirected input
+                    }
+
+                    // Read output and write it forward (or to terminal if last)
+                    if (isLast)
+                    {
+                        using var reader = proc.StandardOutput;
+                        var buffer = new char[4096];
+                        int bytesRead;
+                        while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            ShellIo.Out.Write(buffer, 0, bytesRead);
+                        }
+                    }
+                    else
+                    {
+                        using var reader = proc.StandardOutput;
+                        var buffer = new char[4096];
+                        int bytesRead;
+                        while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            buffers[i].Write(buffer, 0, bytesRead);
+                        }
+                    }
+
+                    // Read and emit errors
+                    string error = proc.StandardError.ReadToEnd();
+                    if (!string.IsNullOrWhiteSpace(error))
+                        ShellIo.Error.Write(error);
+
+                    proc.WaitForExit();
+                }
+            }
+        }
+        finally
+        {
+            ShellIo.SetIn(originalIn);
+            ShellIo.SetOut(originalOut);
+            ShellIo.SetError(originalErr);
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// executes a command based on the provided ParsedCommand.
     /// </summary>
@@ -251,9 +392,28 @@ public static class CommandManager
     // This method handles the "echo" command, which prints its arguments to the output.
     private static bool Echo(ParsedCommand cmd)
     {
-        // Skip the command name "echo" and join the remaining arguments
-        string output = string.Join(" ", cmd.Arguments);
-        ShellIo.Out.WriteLine(output);
+        bool suppressNewline = false;
+        var arguments = new List<string>(cmd.Arguments);
+        
+        // Check for -n flag
+        if (arguments.Count > 0 && arguments[0] == "-n")
+        {
+            suppressNewline = true;
+            arguments.RemoveAt(0);
+        }
+        
+        // Join the remaining arguments
+        string output = string.Join(" ", arguments);
+        
+        // Write output with or without newline based on flag
+        if (suppressNewline)
+        {
+            ShellIo.Out.Write(output);
+        }
+        else
+        {
+            ShellIo.Out.WriteLine(output);
+        }
         return true;
     }
 
