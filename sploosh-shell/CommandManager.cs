@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace AwaShell;
 
@@ -96,102 +97,65 @@ public static class CommandManager
     /// <summary>
     /// Executes a pipeline of commands
     /// </summary>
-    private static void ExecutePipeline(ParsedCommand pipeline)
+    private static bool ExecutePipeline(ParsedCommand command)
     {
-        if (!pipeline.IsPipelineStart)
+        var commands = new List<ParsedCommand>();
+        var current = command;
+        while (current != null)
         {
-            return;
+            commands.Add(current);
+            current = current.PipeTarget;
         }
 
         var processes = new List<Process>();
-        ParsedCommand current = pipeline;
+        var streams = new List<StreamWriter>();
 
-        try
+        StreamReader lastReader = null;
+
+        for (int i = 0; i < commands.Count; i++)
         {
-            Process previousProcess = null;
+            var cmd = commands[i];
+            var isLast = i == commands.Count - 1;
 
-            // Create all processes in the pipeline
-            while (current != null)
+            var process = new Process
             {
-                var process = new Process();
-                string executable = current.Executable;
-                string executablePath = PathResolver.FindExecutable(executable);
-                
-                if (executablePath == null)
+                StartInfo = new ProcessStartInfo
                 {
-                    ShellIo.Error.WriteLine($"{executable}: command not found");
-                    break;
-                }
-
-                process.StartInfo = new ProcessStartInfo
-                {
-                    FileName = executable,
+                    FileName = cmd.Executable,
+                    Arguments = string.Join(" ", cmd.Arguments),
+                    RedirectStandardInput = i > 0,
+                    RedirectStandardOutput = !isLast,
                     UseShellExecute = false,
-                    RedirectStandardInput = previousProcess != null,
-                    RedirectStandardOutput = current.PipeTarget != null || current.Redirects.HasStdOut,
-                    RedirectStandardError = current.Redirects.HasStdErr
-                };
-
-                foreach (var arg in current.Arguments)
-                {
-                    process.StartInfo.ArgumentList.Add(arg);
                 }
+            };
 
-                // If this is the last command in the pipeline and has redirection
-                if (current.PipeTarget == null && current.Redirects.HasAny)
-                {
-                    using var redirectionScope = SetupRedirection(current.Redirects);
-                }
+            if (i > 0)
+                process.StartInfo.RedirectStandardInput = true;
+            if (!isLast)
+                process.StartInfo.RedirectStandardOutput = true;
 
-                processes.Add(process);
-                previousProcess = process;
-                current = current.PipeTarget;
-            }
+            process.Start();
 
-            // Set up the pipeline connections
-            for (int i = 0; i < processes.Count; i++)
+            // Pipe from previous to current
+            if (lastReader != null)
             {
-                processes[i].Start();
-                
-                // Connect stdout of current process to stdin of next process
-                if (i < processes.Count - 1)
+                Task.Run(async () =>
                 {
-                    processes[i].StandardOutput.BaseStream.CopyToAsync(processes[i + 1].StandardInput.BaseStream);
-                }
+                    await lastReader.BaseStream.CopyToAsync(process.StandardInput.BaseStream);
+                    process.StandardInput.Close();
+                });
             }
 
-            // Handle output of last process
-            var lastProcess = processes[processes.Count - 1];
-            if (lastProcess.StartInfo.RedirectStandardOutput)
-            {
-                string output;
-                while ((output = lastProcess.StandardOutput.ReadLine()) != null)
-                {
-                    ShellIo.Out.WriteLine(output);
-                }
-            }
+            if (!isLast)
+                lastReader = process.StandardOutput;
 
-            // Wait for all processes to complete (in reverse order)
-            for (int i = processes.Count - 1; i >= 0; i--)
-            {
-                if (i < processes.Count - 1)
-                {
-                    processes[i + 1].StandardInput.Close();
-                }
-                processes[i].WaitForExit();
-            }
+            processes.Add(process);
         }
-        catch (Exception ex)
-        {
-            ShellIo.Error.WriteLine($"Pipeline execution error: {ex.Message}");
-        }
-        finally
-        {
-            foreach (var process in processes)
-            {
-                process.Dispose();
-            }
-        }
+
+        foreach (var proc in processes)
+            proc.WaitForExit();
+
+        return true;
     }
     
     /// <summary>
