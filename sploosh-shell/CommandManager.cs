@@ -136,53 +136,59 @@ public static class CommandManager
             current = current.PipeTarget;
         }
 
-        var processes = new List<Process>();
-        var streams = new List<StreamWriter>();
+        int count = commands.Count;
+        var processes = new List<Process>(count);
 
-        StreamReader lastReader = null;
+        // Create the pipe connections ahead of time
+        var streams = new List<(StreamReader? stdout, StreamWriter? stdin)>(new (StreamReader?, StreamWriter?)[count]);
 
-        for (int i = 0; i < commands.Count; i++)
+        for (int i = 0; i < count; i++)
         {
             var cmd = commands[i];
-            var isLast = i == commands.Count - 1;
+            var isFirst = i == 0;
+            var isLast = i == count - 1;
 
-            var process = new Process
+            var psi = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = cmd.Executable,
-                    Arguments = string.Join(" ", cmd.Arguments),
-                    RedirectStandardInput = i > 0,
-                    RedirectStandardOutput = !isLast,
-                    UseShellExecute = false,
-                }
+                FileName = cmd.Executable,
+                Arguments = string.Join(" ", cmd.Arguments),
+                UseShellExecute = false,
+                RedirectStandardInput = !isFirst,
+                RedirectStandardOutput = !isLast,
+                RedirectStandardError = true
             };
 
-            if (i > 0)
-                process.StartInfo.RedirectStandardInput = true;
-            if (!isLast)
-                process.StartInfo.RedirectStandardOutput = true;
-
-            process.Start();
-
-            // Pipe from previous to current
-            if (lastReader != null)
-            {
-                Task.Run(async () =>
-                {
-                    await lastReader.BaseStream.CopyToAsync(process.StandardInput.BaseStream);
-                    process.StandardInput.Close();
-                });
-            }
-
-            if (!isLast)
-                lastReader = process.StandardOutput;
-
-            processes.Add(process);
+            var proc = new Process { StartInfo = psi };
+            processes.Add(proc);
         }
 
+        // Start processes
         foreach (var proc in processes)
-            proc.WaitForExit();
+            proc.Start();
+
+        // Set up piping: from stdout of i to stdin of i+1
+        var copyTasks = new List<Task>();
+        for (int i = 0; i < count - 1; i++)
+        {
+            var source = processes[i].StandardOutput.BaseStream;
+            var target = processes[i + 1].StandardInput.BaseStream;
+
+            // Stream the data and close stdin of the next process when done
+            var copyTask = Task.Run(async () =>
+            {
+                await source.CopyToAsync(target);
+                target.Close();
+            });
+
+            copyTasks.Add(copyTask);
+        }
+
+        // Wait for output to finish copying
+        Task.WaitAll(copyTasks.ToArray());
+
+        // Wait for processes in reverse order (important)
+        for (int i = count - 1; i >= 0; i--)
+            processes[i].WaitForExit();
 
         return true;
     }
