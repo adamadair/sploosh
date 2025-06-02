@@ -27,7 +27,7 @@ A hobbyist POSIX-style shell written in C#, because writing your own shell is a 
 - [x] Support shell built-ins (`cd`, `exit`, `echo`, etc.)
 - [ ] Handle background execution with `&`
 - [ ] Implement pipelines using `|`
-- [ ] Implement I/O redirection (`>`, `<`, `>>`, `2>`, `&>`)
+- [X] Implement I/O redirection (`>`, `<`, `>>`, `2>`, `2>>`)
 
 ## Control Structures
 - [ ] `if` / `else` / `elif` support
@@ -57,9 +57,9 @@ A hobbyist POSIX-style shell written in C#, because writing your own shell is a 
 - [ ] Support `#!` (shebang) handling
 
 ## Optional Enhancements
-- [ ] Command line history
-- [ ] Tab completion
-- [ ] Command line editing (e.g., readline-like behavior)
+- [X] Command line history
+- [X] Tab completion
+- [X] Command line editing (e.g., readline-like behavior)
 
 ---
 ## 📄 Requirements
