@@ -24,7 +24,7 @@ public static class CommandManager
         ["unalias"] = (cmd) => { ShellIo.Out.WriteLine("Unalias command not implemented yet."); return true; },
         ["export"] = (cmd) => { ShellIo.Out.WriteLine("Export command not implemented yet."); return true; },
         ["unset"] = (cmd) => { ShellIo.Out.WriteLine("Unset command not implemented yet."); return true; },
-        ["history"] = (cmd) => { ShellIo.Out.WriteLine("History command not implemented yet."); return true; },
+        ["history"] = History,
         ["jobs"] = (cmd) => { ShellIo.Out.WriteLine("Jobs command not implemented yet."); return true; },
         ["fg"] = (cmd) => { ShellIo.Out.WriteLine("Foreground command not implemented yet."); return true; },
         ["bg"] = (cmd) => { ShellIo.Out.WriteLine("Background command not implemented yet."); return true; },
@@ -513,6 +513,32 @@ public static class CommandManager
             ShellIo.Out.WriteLine($"cd: {ex.Message}");
         }
 
+        return true;
+    }
+    
+    private static bool History(ParsedCommand cmd)
+    {
+        // This command is not implemented yet
+        var history = ReadLine.ReadLine.GetHistory();
+        if (history.Count == 0)
+        {
+            ShellIo.Out.WriteLine("No history available.");
+            return true;
+        }
+        var startIndex = 0;
+        if (cmd.Arguments.Count > 0 && int.TryParse(cmd.Arguments[0], out var count))
+        {
+            if (count > 0)
+            {
+                startIndex = Math.Max(0, history.Count - count);
+            }
+        }
+        
+        //Write the history to the output
+        for (var i = startIndex; i < history.Count; i++)
+        {
+            ShellIo.Out.WriteLine($"{i+1}  {history[i]}");
+        }
         return true;
     }
 }
