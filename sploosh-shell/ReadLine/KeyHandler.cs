@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using AwaShell.ReadLine.Abstractions;
+using AwaShell.Utils;
 
 namespace AwaShell.ReadLine;
 
@@ -18,6 +20,7 @@ internal class KeyHandler
     private int _completionStart;
     private int _completionsIndex;
     private readonly IConsole _console;
+    private bool _isAutoCompleteMode;
 
     private bool IsStartOfLine() => _cursorPos == 0;
 
@@ -28,7 +31,6 @@ internal class KeyHandler
     private bool IsStartOfBuffer() => _console.CursorLeft == 0;
 
     private bool IsEndOfBuffer() => _console.CursorLeft == _console.BufferWidth - 1;
-    private bool IsInAutoCompleteMode() => _completions != null;
 
     private void MoveCursorLeft()
     {
@@ -251,13 +253,6 @@ internal class KeyHandler
                 WriteNewString(_history[_historyIndex]);
         }
     }
-
-    private void ResetAutoComplete()
-    {
-        _completions = null;
-        _completionsIndex = 0;
-    }
-
     private void OneWordBackward() {
         SkipBlanks(backwards: true);
         while (!IsStartOfLine() && _text[_cursorPos - 1] != ' ')
@@ -355,26 +350,52 @@ internal class KeyHandler
                     ReplaceChar(char.ToLowerInvariant(_text[_cursorPos]));
             },
             ["Tab"] = () => {
-                if(autoCompleteHandler == null || !IsEndOfLine())
-                    return; 
                 string text = _text.ToString();
+                if(autoCompleteHandler == null || !IsEndOfLine() || string.IsNullOrEmpty(text))
+                    return; 
                 _completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
                 _completions = autoCompleteHandler.GetSuggestions(text, _completionStart);
                 if (_completions.Length == 1)
                 {
                     // If there's only one completion, write it directly
                     WriteString($"{_completions[0]} ");
+                    _isAutoCompleteMode = false;
+                }
+                else if (_completions.Length > 1)
+                {
+                    //  #WT6 Partial completions - look for common prefix
+                    var prefix = StringUtils.FindCommonPrefix(_completions);
+                    if (!string.IsNullOrEmpty(prefix))
+                    {
+                        // If there's a common prefix, write it
+                        WriteString(prefix);
+                        return;
+                    }
+                    
+                    if (!_isAutoCompleteMode)
+                    {
+                        Console.Write("\x07"); // Bell character to indicate multiple completions. Alert the user when entering auto-complete mode.
+                        _isAutoCompleteMode = true;
+                    }
+                    else
+                    {
+                        // #WH6 Multiple completions
+                        // user has pressed Tab again, so we print the list of candidate completions
+                        ShellIo.Out.WriteLine();
+                        var completions = _completions.Select(s => text + s).Order();
+                        var line = string.Join("  ", completions);
+                        ShellIo.Out.WriteLine(line);
+                        ShellIo.Out.Write($"{ShellSettings.Instance.Prompt}{text}");
+                    }
                 }
                 else
                 {
-                    Console.Write("\x07"); // Bell character to indicate multiple completions
-                }
+                    Console.Write("\x07");
+                }            
             },
 
             ["ShiftTab"] = () => {
-                if (IsInAutoCompleteMode()) {
-                    PreviousAutoComplete();
-                }
+                Console.Write("\x07");
             }
         };
     }
@@ -384,8 +405,8 @@ internal class KeyHandler
         _keyInfo = keyInfo;
 
         // If in auto complete mode and Tab wasn't pressed
-        if (IsInAutoCompleteMode() && _keyInfo.Key != ConsoleKey.Tab)
-            ResetAutoComplete();
+        if (_isAutoCompleteMode && _keyInfo.Key != ConsoleKey.Tab)
+            _isAutoCompleteMode = false;
 
         _keyActions.TryGetValue(BuildKeyInput(), out Action action);
 

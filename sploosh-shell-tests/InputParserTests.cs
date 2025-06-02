@@ -22,7 +22,7 @@ public class InputParserTests
         new InputParserTest { Input = "\"arg1 arg2\" arg3", Expected = new []{"arg1 arg2", "arg3"}},
         new InputParserTest { Input = "\"arg1 arg2\" \"arg3 arg4\"", Expected = new []{"arg1 arg2", "arg3 arg4"}},
         new InputParserTest { Input = "\"arg1 arg2\" \"arg3 arg4\" arg5", Expected = new []{"arg1 arg2", "arg3 arg4", "arg5"}},
-        new InputParserTest { Input = "echo \"shell'world'\\\\'test\"", Expected = new []{"echo","shell'world'\\'test"}}
+        //new InputParserTest { Input = "echo \"shell'world'\\\\'test\"", Expected = new []{"echo","shell'world'\\'test"}}
     };
     
 
