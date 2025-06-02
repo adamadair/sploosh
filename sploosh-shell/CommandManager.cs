@@ -140,7 +140,7 @@ public static class CommandManager
         var processes = new List<Process>(count);
 
         // Create the pipe connections ahead of time
-        var streams = new List<(StreamReader? stdout, StreamWriter? stdin)>(new (StreamReader?, StreamWriter?)[count]);
+        // Removed unused 'streams' variable declaration to simplify the code.
 
         for (int i = 0; i < count; i++)
         {
