@@ -82,9 +82,15 @@ internal class KeyHandler
 
     private void ClearLine()
     {
-        MoveCursorEnd();
-        while (!IsStartOfLine())
-            Backspace();
+        if(!IsEndOfLine())
+            MoveCursorEnd();
+        for (var i = 0; i < _text.Length; i++)
+        {
+            Console.Write("\b \b");
+        }
+        _text.Clear();
+        _cursorPos = 0;
+        _cursorLimit = 0;
     }
 
     private void SkipBlanks(bool backwards = false) {
@@ -195,42 +201,6 @@ internal class KeyHandler
         _cursorPos = cursorPosition;
 
         MoveCursorRight();
-    }
-
-    private void StartAutoComplete()
-    {
-        while (_cursorPos > _completionStart)
-            Backspace();
-
-        _completionsIndex = 0;
-
-        WriteString(_completions[_completionsIndex]);
-    }
-
-    private void NextAutoComplete()
-    {
-        while (_cursorPos > _completionStart)
-            Backspace();
-
-        _completionsIndex++;
-
-        if (_completionsIndex == _completions.Length)
-            _completionsIndex = 0;
-
-        WriteString(_completions[_completionsIndex]);
-    }
-
-    private void PreviousAutoComplete()
-    {
-        while (_cursorPos > _completionStart)
-            Backspace();
-
-        _completionsIndex--;
-
-        if (_completionsIndex == -1)
-            _completionsIndex = _completions.Length - 1;
-
-        WriteString(_completions[_completionsIndex]);
     }
 
     private void PrevHistory()
