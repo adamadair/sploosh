@@ -18,33 +18,40 @@ public static class ReadLine
     public static List<string> GetHistory() => _history;
     public static void ClearHistory() => _history = [];
     public static bool HistoryEnabled { get; set; }
-    public static IAutoCompleteHandler AutoCompletionHandler { private get; set; }
+    private static IAutoCompleteHandler AutoCompletionHandler { get; set; }
 
     public static string Read(string prompt = "", string @default = "")
     {
         var console = new Console2(prompt);
         console.WritePrompt();
-        //Console.Write(prompt);
         var keyHandler = new KeyHandler(console, _history, AutoCompletionHandler);
-        string text = GetText(keyHandler);
+        var text = GetText(keyHandler);
 
-        if (String.IsNullOrWhiteSpace(text) && !String.IsNullOrWhiteSpace(@default))
+        if (string.IsNullOrWhiteSpace(text) && !string.IsNullOrWhiteSpace(@default))
         {
             text = @default;
         }
         else
         {
             if (HistoryEnabled)
-                _history.Add(text);
+                AddHistory(text);
         }
 
         return text;
     }
 
+    private static void AddHistory(string commandText)
+    {
+        var lastCommand = _history.Count > 0 ? _history[^1] : string.Empty;
+        if (lastCommand != commandText)
+        {
+            _history.Add(commandText);
+        }
+    }
+
     public static string ReadPassword(string prompt = "")
     {
         var console = new Console2(prompt) { PasswordMode = true };
-        //Console.Write(prompt);
         console.WritePrompt();
         var keyHandler = new KeyHandler(console, null, null);
         return GetText(keyHandler);
@@ -52,7 +59,7 @@ public static class ReadLine
 
     private static string GetText(KeyHandler keyHandler)
     {
-        ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+        var keyInfo = Console.ReadKey(true);
         while (keyInfo.Key != ConsoleKey.Enter)
         {
             keyHandler.Handle(keyInfo);
