@@ -46,7 +46,10 @@ public static class ReadEvalPrintLoop
             {
                 Console.WriteLine($"Error: {ex.Message}");
             }
+            finally
+            {
+                ReadLine.ReadLine.SaveHistory();
+            }
         }
-        ReadLine.ReadLine.SaveHistory();
     }
 }
