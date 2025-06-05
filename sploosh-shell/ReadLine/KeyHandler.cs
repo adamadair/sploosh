@@ -16,9 +16,6 @@ internal class KeyHandler
     private int _historyIndex;
     private ConsoleKeyInfo _keyInfo;
     private readonly Dictionary<string, Action> _keyActions;
-    private string[] _completions;
-    private int _completionStart;
-    private int _completionsIndex;
     private readonly IConsole _console;
     private bool _isAutoCompleteMode;
 
@@ -323,18 +320,18 @@ internal class KeyHandler
                 string text = _text.ToString();
                 if(autoCompleteHandler == null || !IsEndOfLine() || string.IsNullOrEmpty(text))
                     return; 
-                _completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
-                _completions = autoCompleteHandler.GetSuggestions(text, _completionStart);
-                if (_completions.Length == 1)
+                var completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
+                var completions1 = autoCompleteHandler.GetSuggestions(text, completionStart);
+                if (completions1.Length == 1)
                 {
                     // If there's only one completion, write it directly
-                    WriteString($"{_completions[0]} ");
+                    WriteString($"{completions1[0]} ");
                     _isAutoCompleteMode = false;
                 }
-                else if (_completions.Length > 1)
+                else if (completions1.Length > 1)
                 {
                     //  #WT6 Partial completions - look for common prefix
-                    var prefix = StringUtils.FindCommonPrefix(_completions);
+                    var prefix = StringUtils.FindCommonPrefix(completions1);
                     if (!string.IsNullOrEmpty(prefix))
                     {
                         // If there's a common prefix, write it
@@ -352,7 +349,7 @@ internal class KeyHandler
                         // #WH6 Multiple completions
                         // user has pressed Tab again, so we print the list of candidate completions
                         ShellIo.Out.WriteLine();
-                        var completions = _completions.Select(s => text + s).Order();
+                        var completions = completions1.Select(s => text + s).Order();
                         var line = string.Join("  ", completions);
                         ShellIo.Out.WriteLine(line);
                         ShellIo.Out.Write($"{ShellSettings.Instance.Prompt}{text}");
