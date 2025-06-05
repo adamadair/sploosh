@@ -9,7 +9,7 @@ public static class ReadLine
 {
     private static List<string> _history;
     private static int _lastAppendedIndex = 0; // Track the last appended index for history
-    
+    private static bool _exitHistoryProcessed = false; // Flag to track if exit history has been processed
     
     static ReadLine()
     {
@@ -107,9 +107,8 @@ public static class ReadLine
             var loadedHistory = new List<string>(System.IO.File.ReadAllLines(filePath));
             if (append)
             {
-                
                 _history.AddRange(loadedHistory);
-            }
+            } 
             else
             {
                 var oldHistory = _history; 
@@ -126,14 +125,26 @@ public static class ReadLine
         }
     }
 
-    public static void InitializeHistory()
+    public static string HistoryFileName
     {
-        var fileName = Environment.GetEnvironmentVariable("HISTFILE");
-        if (string.IsNullOrEmpty(fileName))
+        get
         {
-            fileName = ShellSettings.SettingsFile;
+            var fileName = Environment.GetEnvironmentVariable("HISTFILE");
+            if (string.IsNullOrEmpty(fileName))
+            {
+                fileName = ShellSettings.SettingsFile;
+            }
+            return fileName;
         }
-        LoadHistoryFromFile(fileName);
+    }
+
+    public static void InitializeHistory() => LoadHistoryFromFile(HistoryFileName);
+    
+    public static void SaveHistory() 
+    {
+        if (_exitHistoryProcessed) return; // Prevent saving history multiple times
+        _exitHistoryProcessed = true; // Set the flag to true to prevent further saves
+        WriteHistoryToFile(HistoryFileName, append: false);
     }
     
 }

@@ -11,6 +11,7 @@ public class Exit : IBuiltInCommand
     public bool Execute(ParsedCommand cmd)
     {
         var exitCode = 0;
+        ReadLine.ReadLine.SaveHistory();
         if (cmd.Arguments.Count > 0)
         {
             var tryParse = int.TryParse(cmd.Arguments[0], out exitCode);
