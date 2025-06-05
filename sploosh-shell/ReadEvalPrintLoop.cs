@@ -14,6 +14,7 @@ public static class ReadEvalPrintLoop
     {
         // Initialize the ReadLine library
         ReadLine.ReadLine.HistoryEnabled = true;
+        ReadLine.ReadLine.InitializeHistory();
         while (true)
         {
             string input = ReadLine.ReadLine.Read(Prompt);
@@ -44,6 +45,10 @@ public static class ReadEvalPrintLoop
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
+            }
+            finally
+            {
+                ReadLine.ReadLine.SaveHistory();
             }
         }
     }

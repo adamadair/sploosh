@@ -17,7 +17,9 @@ internal class Console2(string prompt) : IConsole
 
     public bool PasswordMode { get; set; }
 
+#pragma warning disable CA1416
     public void SetBufferSize(int width, int height) => Console.SetBufferSize(width, height);
+#pragma warning restore CA1416
 
     public void SetCursorPosition(int left, int top)
     {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using AwaShell.ReadLine.Abstractions;
 
 namespace AwaShell.ReadLine;
@@ -7,7 +8,9 @@ namespace AwaShell.ReadLine;
 public static class ReadLine
 {
     private static List<string> _history;
-
+    private static int _lastAppendedIndex = 0; // Track the last appended index for history
+    private static bool _exitHistoryProcessed = false; // Flag to track if exit history has been processed
+    
     static ReadLine()
     {
         _history = [];
@@ -16,7 +19,11 @@ public static class ReadLine
 
     public static void AddHistory(params string[] text) => _history.AddRange(text);
     public static List<string> GetHistory() => _history;
-    public static void ClearHistory() => _history = [];
+    public static void ClearHistory()
+    { 
+        _history = [];
+        _lastAppendedIndex = 0;
+    } 
     public static bool HistoryEnabled { get; set; }
     private static IAutoCompleteHandler AutoCompletionHandler { get; set; }
 
@@ -69,4 +76,75 @@ public static class ReadLine
         Console.WriteLine();
         return keyHandler.Text;
     }
+    
+    public static void WriteHistoryToFile(string filePath, bool append = false)
+    {
+        if (_history.Count == 0)
+            return;
+
+        try
+        {
+            if (append)
+            {
+                var historyToAppend = _history.Skip(_lastAppendedIndex).ToList();
+                System.IO.File.AppendAllLines(filePath, historyToAppend);
+                _lastAppendedIndex = _history.Count; // Update the last appended index
+                return;
+            }
+            System.IO.File.WriteAllLines(filePath, _history);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error writing history to file: {ex.Message}");
+        }
+    }
+    
+    public static void LoadHistoryFromFile(string filePath, bool append = false)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(filePath)) return;
+            var loadedHistory = new List<string>(System.IO.File.ReadAllLines(filePath));
+            if (append)
+            {
+                _history.AddRange(loadedHistory);
+            } 
+            else
+            {
+                var oldHistory = _history; 
+                _history = loadedHistory;
+                if (oldHistory.Count > 0)
+                {
+                    _history.Insert(0,oldHistory.Last());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading history from file: {ex.Message}");
+        }
+    }
+
+    public static string HistoryFileName
+    {
+        get
+        {
+            var fileName = Environment.GetEnvironmentVariable("HISTFILE");
+            if (string.IsNullOrEmpty(fileName))
+            {
+                fileName = ShellSettings.SettingsFile;
+            }
+            return fileName;
+        }
+    }
+
+    public static void InitializeHistory() => LoadHistoryFromFile(HistoryFileName);
+    
+    public static void SaveHistory() 
+    {
+        if (_exitHistoryProcessed) return; // Prevent saving history multiple times
+        _exitHistoryProcessed = true; // Set the flag to true to prevent further saves
+        WriteHistoryToFile(HistoryFileName, append: false);
+    }
+    
 }

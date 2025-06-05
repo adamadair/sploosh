@@ -4,34 +4,20 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using AwaShell.BuiltInCommands;
 
 namespace AwaShell;
 
 // This class is responsible for managing and executing commands in the shell.
 public static class CommandManager
 {
-    // Dictionary of built-in commands and their handlers
-    private static readonly Dictionary<string, Func<ParsedCommand, bool>> _builtins = new()
-    {
-        ["echo"] = Echo,
-        ["exit"] = Exit,
-        ["type"] = Type,
-        ["pwd"] = Pwd,
-        ["cd"] = Cd,
-        ["clear"] = (cmd) => { ShellIo.Out.WriteLine("\x1b[H\x1b[2J"); return true; },
-        ["help"] = (cmd) => { ShellIo.Out.WriteLine("Available commands: " + string.Join(", ", _builtins.Keys)); return true; },
-        ["alias"] = (cmd) => { ShellIo.Out.WriteLine("Alias command not implemented yet."); return true; },
-        ["unalias"] = (cmd) => { ShellIo.Out.WriteLine("Unalias command not implemented yet."); return true; },
-        ["export"] = (cmd) => { ShellIo.Out.WriteLine("Export command not implemented yet."); return true; },
-        ["unset"] = (cmd) => { ShellIo.Out.WriteLine("Unset command not implemented yet."); return true; },
-        ["history"] = History,
-        ["jobs"] = (cmd) => { ShellIo.Out.WriteLine("Jobs command not implemented yet."); return true; },
-        ["fg"] = (cmd) => { ShellIo.Out.WriteLine("Foreground command not implemented yet."); return true; },
-        ["bg"] = (cmd) => { ShellIo.Out.WriteLine("Background command not implemented yet."); return true; },
-    };
     
     // Readonly property to get the list of built-in commands
-    public static IEnumerable<string> BuiltinCommands => _builtins.Keys;
+    public static HashSet<string> BuiltinCommands =>
+    [
+        ..BuiltIns.Commands
+            .Select(cmd => cmd.Name)
+    ];
 
     /// <summary>
     /// Class to handle temporary redirection of output streams
@@ -114,7 +100,7 @@ public static class CommandManager
             return true;
 
         // If the pipeline has no builtins, we can use a simpler approach
-        if (!command.IsPipelineStart || !CollectPipeline(command).Any(c => _builtins.ContainsKey(c.Executable)))
+        if (!command.IsPipelineStart || !CollectPipeline(command).Any(c => BuiltinCommands.Contains(c.Executable)))
         {
             return ExecutePipelineWithNoBuiltins(command);
         }
@@ -216,7 +202,7 @@ public static class CommandManager
             for (int i = 0; i < stages; i++)
             {
                 var cmd = pipeline[i];
-                bool isBuiltin = _builtins.ContainsKey(cmd.Executable);
+                bool isBuiltin = BuiltinCommands.Contains(cmd.Executable);
                 bool isFirst = i == 0;
                 bool isLast = i == stages - 1;
 
@@ -236,7 +222,7 @@ public static class CommandManager
 
                 if (isBuiltin)
                 {
-                    _builtins[cmd.Executable](cmd);
+                    BuiltIns.GetBuiltInCommand(cmd.Executable).Execute(cmd);
                 }
                 else
                 {
@@ -328,12 +314,12 @@ public static class CommandManager
         using var outputRedirection = SetupRedirection(parsedCommand.Redirects);
 
         // Check if it's a builtin command
-        if (_builtins.TryGetValue(command, out var builtinHandler))
+        if (BuiltIns.IsBuiltInCommand(parsedCommand.Executable))
         {
-            return builtinHandler(parsedCommand);
+            return BuiltIns.GetBuiltInCommand(parsedCommand.Executable).Execute(parsedCommand);
         }
         
-        string executablePath = PathResolver.FindExecutable(command);
+        var executablePath = PathResolver.FindExecutable(command);
         if (executablePath != null)
         {
             try
@@ -394,151 +380,5 @@ public static class CommandManager
         ShellIo.Out.WriteLine($"{command}: command not found");
         return true;
     }
-
-    // This method handles the "echo" command, which prints its arguments to the output.
-    private static bool Echo(ParsedCommand cmd)
-    {
-        bool suppressNewline = false;
-        var arguments = new List<string>(cmd.Arguments);
-        
-        // Check for -n flag
-        if (arguments.Count > 0 && arguments[0] == "-n")
-        {
-            suppressNewline = true;
-            arguments.RemoveAt(0);
-        }
-        
-        // Join the remaining arguments
-        string output = string.Join(" ", arguments);
-        
-        // Write output with or without newline based on flag
-        if (suppressNewline)
-        {
-            ShellIo.Out.Write(output);
-        }
-        else
-        {
-            ShellIo.Out.WriteLine(output);
-        }
-        return true;
-    }
-
-    // This method handles the "exit" command, which terminates the shell with an optional exit code.
-    private static bool Exit(ParsedCommand cmd)
-    {
-        var exitCode = 0;
-        if (cmd.Arguments.Count > 0)
-        {
-            var tryParse = int.TryParse(cmd.Arguments[0], out exitCode);
-            if (exitCode is < 0 or > 255) exitCode = 0;
-            if (!tryParse)
-            {
-                exitCode = 0;
-            }
-        }
-        Environment.Exit(exitCode);
-        return false;
-    }
-
-    // This method handles the "type" command, which checks if a command is a shell builtin or an executable.
-    private static bool Type(ParsedCommand cmd)
-    {
-        if (cmd.Arguments.Count < 1)
-        {
-            return true;
-        }
-        
-        var command = cmd.Arguments[0];
-
-        if (_builtins.ContainsKey(command))
-        {
-            ShellIo.Out.WriteLine($"{command} is a shell builtin");
-        }
-        else
-        {
-            var path = PathResolver.FindExecutable(command);
-            if (path != null)
-            {
-                ShellIo.Out.WriteLine($"{command} is {path}");
-            }
-            else
-            {
-                ShellIo.Out.WriteLine($"{command} not found");
-            }
-        }
-
-        return true;
-    }
-
-    // This method handles the "pwd" command, which prints the current working directory.
-    private static bool Pwd(ParsedCommand cmd)
-    {
-        string currentDirectory = Directory.GetCurrentDirectory();
-        ShellIo.Out.WriteLine(currentDirectory);
-        return true;
-    }
-
-    // This method handles the "cd" command, which changes the current working directory.
-    private static bool Cd(ParsedCommand cmd)
-    {
-        if (cmd.Arguments.Count < 1)
-        {
-            // go to the home directory
-            string homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            Directory.SetCurrentDirectory(homeDir);
-            return true;
-        }
-        
-        string path = cmd.Arguments[0];
-        if (path.StartsWith("~"))
-        {
-            var newPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            if (path.Length > 1)
-            {
-                newPath += path.Substring(1);
-                
-            }
-            path = newPath;
-        }
-        try
-        {
-            Directory.SetCurrentDirectory(path);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            ShellIo.Out.WriteLine($"cd: {path}: No such file or directory");
-        }
-        catch (Exception ex)
-        {
-            ShellIo.Out.WriteLine($"cd: {ex.Message}");
-        }
-
-        return true;
-    }
     
-    private static bool History(ParsedCommand cmd)
-    {
-        // This command is not implemented yet
-        var history = ReadLine.ReadLine.GetHistory();
-        if (history.Count == 0)
-        {
-            ShellIo.Out.WriteLine("No history available.");
-            return true;
-        }
-        var startIndex = 0;
-        if (cmd.Arguments.Count > 0 && int.TryParse(cmd.Arguments[0], out var count))
-        {
-            if (count > 0)
-            {
-                startIndex = Math.Max(0, history.Count - count);
-            }
-        }
-        
-        //Write the history to the output
-        for (var i = startIndex; i < history.Count; i++)
-        {
-            ShellIo.Out.WriteLine($"{i+1}  {history[i]}");
-        }
-        return true;
-    }
 }
