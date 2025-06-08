@@ -15,7 +15,8 @@ internal static class BuiltIns
         new Pwd(),
         new Cd(),
         new History(),
-        new Help()
+        new Help(),
+        new Clear(),
         // Add more commands here
     ];
     
